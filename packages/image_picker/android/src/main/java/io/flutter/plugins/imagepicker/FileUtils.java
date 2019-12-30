@@ -24,6 +24,7 @@
 package io.flutter.plugins.imagepicker;
 
 import android.annotation.SuppressLint;
+import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.Context;
 import android.database.Cursor;
@@ -33,13 +34,20 @@ import android.os.Environment;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.text.TextUtils;
+import android.webkit.MimeTypeMap;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 class FileUtils {
+
+  private static List<String> KNOWN_IMAGE_TYPES = Arrays.asList("jpg","jpeg","png","gif","svg","webp");
 
   String getPathFromUri(final Context context, final Uri uri) {
     String path = getPathFromLocalUri(context, uri);
@@ -144,7 +152,11 @@ class FileUtils {
     OutputStream outputStream = null;
     boolean success = false;
     try {
-      String extension = getImageExtension(uri);
+      String extension = getImageExtensionFromUri(context, uri);
+
+      if (extension == null) {
+        extension = getImageExtension(uri);
+      }
       inputStream = context.getContentResolver().openInputStream(uri);
       file = File.createTempFile("image_picker", extension, context.getCacheDir());
       outputStream = new FileOutputStream(file);
@@ -170,6 +182,19 @@ class FileUtils {
     return success ? file.getPath() : null;
   }
 
+  private static String getImageExtensionFromUri(Context context, Uri uriImage) {
+    // Tries to somehow determine the extension from the Uri before giving up
+    if (uriImage.getScheme().equals(ContentResolver.SCHEME_CONTENT)) {
+      //If scheme is a content
+      final MimeTypeMap mime = MimeTypeMap.getSingleton();
+      final String extension = mime.getExtensionFromMimeType(context.getContentResolver().getType(uriImage));
+
+      return extension != null && !extension.isEmpty() ? "." + extension : null;
+    }
+
+    return null;
+  }
+
   /** @return extension of image with dot, or default .jpg if it none. */
   private static String getImageExtension(Uri uriImage) {
     String extension = null;
@@ -178,6 +203,11 @@ class FileUtils {
       String imagePath = uriImage.getPath();
       if (imagePath != null && imagePath.lastIndexOf(".") != -1) {
         extension = imagePath.substring(imagePath.lastIndexOf(".") + 1);
+
+        if (extension.length() > 4 || !KNOWN_IMAGE_TYPES.contains(extension.toLowerCase())) {
+          // Somehow the uri seems to have an extension but doesn't
+          extension = null;
+        }
       }
     } catch (Exception e) {
       extension = null;
